@@ -3,17 +3,39 @@ import streamlit as st
 import joblib
 import numpy as np
 from fpdf import FPDF
-from io import BytesIO
+import os
 
 # ------------------ Page Configuration ------------------
-st.set_page_config(page_title="Multi-Cancer Diagnosis System", layout="wide")
+st.set_page_config(page_title="Multi-Cancer Diagnosis System",
+                   layout="wide")
 
-# ------------------ Custom CSS ------------------
+
+st.markdown(
+    """
+    <style>
+    .stMain { !important;
+        background: #6242c2 !important;
+        color: #e6ff26 !important;
+    }
+    .stAppHeader{
+        background: black !important;
+        color:#29d923 !important;
+    }
+    section[data-testid="stSidebar"] { 
+        background: #dfe6aa !important;  
+        color: red !important;
+    }
+    .stMarkdownContainer p{
+    color: red !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# ------------------ Custom CSS Styling ------------------
 st.markdown("""
     <style>
-        .stMain { background: #6242c2 !important; color: #e6ff26 !important; }
-        section[data-testid="stSidebar"] { background: #dfe6aa !important; color: red !important; }
-        .stMarkdownContainer p { color: red !important; }
         body {
             background: linear-gradient(to right, #e0b3ff, #c299ff);
         }
@@ -21,7 +43,9 @@ st.markdown("""
             background: linear-gradient(to right, #e0b3ff, #c299ff);
             color: black;
         }
-        .stSelectbox div div div span { color: blue !important; }
+        .stSelectbox div div div span {
+            color: blue !important;
+        }
         .stButton>button {
             color: white !important;
             background-color: #6a0dad;
@@ -32,7 +56,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ------------------ Sidebar ------------------
-st.sidebar.markdown("<h3 style='color:black;'>Select Cancer Type</h3>", unsafe_allow_html=True)
+st.sidebar.markdown("""
+    <h3 style='color:black;'>Select Cancer Type</h3>
+""", unsafe_allow_html=True)
+
 cancer_type = st.sidebar.selectbox("", ["Breast Cancer", "Lung Cancer", "Skin Cancer"])
 
 st.sidebar.markdown("""
@@ -40,21 +67,19 @@ st.sidebar.markdown("""
     <p style='color:black;'>This system helps detect Breast, Lung, and Skin cancers early using Machine Learning.</p>
     <p style='color:#ff2635;'>Made with ❤️ by <br>
     <strong> Jaymin Patel </strong> </p>
+   
 """, unsafe_allow_html=True)
 
-# ------------------ Load Model and Scaler ------------------
-def load_model_and_scaler(cancer_type):
-    model_paths = {
-        "Breast Cancer": ("models/breast_cancer_model.pkl", "models/breast_cancer_scaler.pkl"),
-        "Lung Cancer": ("models/lung_cancer_model.pkl", None),
-        "Skin Cancer": ("models/skin_cancer_model.pkl", None)
+# ------------------ Load Models ------------------
+def load_model(cancer_type):
+    models = {
+        "Breast Cancer": "models/breast_cancer_model.pkl",
+        "Lung Cancer": "models/lung_cancer_model.pkl",
+        "Skin Cancer": "models/skin_cancer_model.pkl"
     }
-    model_path, scaler_path = model_paths[cancer_type]
-    model = joblib.load(model_path)
-    scaler = joblib.load(scaler_path) if scaler_path else None
-    return model, scaler
+    return joblib.load(models[cancer_type])
 
-# ------------------ Seriousness Level ------------------
+# ------------------ Seriousness Function ------------------
 def seriousness_level(prob):
     if prob >= 0.85:
         return "High"
@@ -78,10 +103,9 @@ def generate_pdf(cancer_type, inputs, result, probability, seriousness):
     pdf.cell(200, 10, txt=f"Probability: {probability:.2f}", ln=True)
     pdf.cell(200, 10, txt=f"Seriousness Level: {seriousness}", ln=True)
 
-    pdf_output = BytesIO()
-    pdf.output(pdf_output)
-    pdf_output.seek(0)
-    return pdf_output
+    pdf_path = f"report_{cancer_type.replace(' ', '_')}.pdf"
+    pdf.output(pdf_path)
+    return pdf_path
 
 # ------------------ Input Forms ------------------
 def get_inputs(cancer_type):
@@ -100,12 +124,10 @@ def get_inputs(cancer_type):
             inputs[feature] = st.number_input(f"{feature.replace('_', ' ').title()}", min_value=0.0, value=0.0)
 
     elif cancer_type == "Lung Cancer":
-        options = ["Gender", "Smoking", "Yellow Fingers", "Anxiety", "Peer Pressure", "Chronic Disease",
-                   "Fatigue", "Allergy", "Wheezing", "Alcohol Consuming", "Coughing", "Shortness of Breath",
-                   "Swallowing Difficulty", "Chest Pain"]
+        options = ["Gender", "Smoking", "Yellow Fingers", "Anxiety", "Peer Pressure", "Chronic Disease", "Fatigue", "Allergy", "Wheezing", "Alcohol Consuming", "Coughing", "Shortness of Breath", "Swallowing Difficulty", "Chest Pain", "Lung cancer"]
         for opt in options:
             if opt == "Gender":
-                inputs[opt] = st.selectbox(f"{opt}", ["Male", "Female"])  # Removed "Other"
+                inputs[opt] = st.selectbox(f"{opt}", ["Male", "Female", "Other"])
             else:
                 inputs[opt] = st.selectbox(f"{opt}", ["Yes", "No"])
 
@@ -115,59 +137,42 @@ def get_inputs(cancer_type):
             if opt == "Age":
                 inputs[opt] = st.slider("Age", min_value=1, max_value=100, value=25)
             elif opt == "Gender":
-                inputs[opt] = st.selectbox(f"{opt}", ["Male", "Female"])  # Removed "Other"
+                inputs[opt] = st.selectbox(f"{opt}", ["Male", "Female", "Other"])
             else:
                 inputs[opt] = st.selectbox(f"{opt}", ["Yes", "No"])
     return inputs
 
-# ------------------ Preprocess Inputs ------------------
+# ------------------ Prediction ------------------
 def preprocess_inputs(inputs, cancer_type):
     processed = []
     for val in inputs.values():
         if isinstance(val, str):
-            if cancer_type == "Breast Cancer":
-                processed.append(float(val))
-            else:
-                # Convert categorical features to numerical
-                if val == "Yes":
-                    processed.append(1)
-                elif val == "Male":
-                    processed.append(1)
-                elif val == "Female":
-                    processed.append(0)
-                else:
-                    processed.append(0)
+            processed.append(1 if val == "Yes" else 0)
         else:
             processed.append(val)
     return np.array(processed).reshape(1, -1)
 
-# ------------------ Main UI ------------------
+# ------------------ Main ------------------
 st.title("🎗️ Multi-Cancer Diagnosis System 🎗️")
-st.markdown("<h3 style='color:#edc9f0;'>💗 Early Detection Saves Lives</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='color:#edc9f0;'>💗Early Detection Saves Lives</h3>", unsafe_allow_html=True)
 
 inputs = get_inputs(cancer_type)
 
 if st.button("🔎 Diagnose Now"):
-    try:
-        model, scaler = load_model_and_scaler(cancer_type)
-        features = preprocess_inputs(inputs, cancer_type)
-        
-        # Apply scaler if available
-        if scaler is not None:
-            features = scaler.transform(features)
-        
-        prediction = model.predict(features)[0]
-        probability = model.predict_proba(features)[0][1]
-        result = "Positive" if prediction == 1 else "Negative"
-        seriousness = seriousness_level(probability)
+    model = load_model(cancer_type)
+    features = preprocess_inputs(inputs, cancer_type)
+    prediction = model.predict(features)[0]
+    probability = model.predict_proba(features)[0][1]
+    result = "Positive" if prediction == 1 else "Negative"
+    seriousness = seriousness_level(probability)
 
-        st.success(f"Diagnosis Result: {result}")
-        st.info(f"Probability: {probability:.2f}")
-        st.warning(f"Seriousness Level: {seriousness}")
+    st.success(f"Diagnosis Result: {result}")
+    st.info(f"Probability: {probability:.2f}")
+    st.warning(f"Seriousness Level: {seriousness}")
 
-        pdf_data = generate_pdf(cancer_type, inputs, result, probability, seriousness)
-        st.download_button("📄 Download Report as PDF", pdf_data,
-                           file_name=f"{cancer_type.replace(' ', '_')}_report.pdf")
+    # Generate and download PDF
+    pdf_path = generate_pdf(cancer_type, inputs, result, probability, seriousness)
+    with open(pdf_path, "rb") as f:
+        st.download_button("📄 Download Report as PDF", f, file_name=pdf_path)
 
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
+    os.remove(pdf_path)
